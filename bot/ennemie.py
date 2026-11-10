@@ -4,7 +4,7 @@ et appellent un Titan (qui combat en mode auto pour eux)."""
 import math
 import random
 from ursina import *
-import etat as E
+from partie import etat as E
 from bot.pilote import Pilote
 from bot import navigation as Nav
 from bot.modeles import humanoide
@@ -80,10 +80,21 @@ class PiloteIA(Pilote):
         if self.dest is not None and self.bloque < 1.2 and self.route:
             return
         self.bloque = 0
+        obj = E.partie.objectif_ia(self) if E.partie is not None else None
+        if obj is not None:                                  # mode Point de contrôle : on rejoint / tient la zone
+            if math.hypot(obj.x - self.x, obj.z - self.z) < E.partie.rayon_zone() * .6:
+                self.dest, self.route = None, []
+                return
+            self.dest = Vec3(obj.x, obj.y, obj.z)
+            self.route = Nav.route(self.position, self.dest, self.dest.y)
+            return
         besoin = None
-        if self.hp < self.hp_max * .55:
+        if len(self.armes) < 2 or self.armes[1].melee:       # que le couteau : cherche les loots rouges (arme)
+            besoin = 'arme'
+        if besoin is None and self.hp < self.hp_max * .55:
             besoin = 'soin'
-        elif self.arme.reserve is not None and self.arme.reserve + self.arme.munitions < self.arme.chargeur:
+        elif besoin is None and self.arme.reserve is not None and not self.arme.melee \
+                and self.arme.reserve + self.arme.munitions < self.arme.chargeur:
             besoin = 'munitions'
         best, bd = None, 220 if besoin else 130
         for l in E.loots:
@@ -152,10 +163,10 @@ class PiloteIA(Pilote):
     # ---- tir ---------------------------------------------------------------------------
     def tirer_sur_cible(self, dt):
         a = self.arme
-        if a.munitions <= 0 and (a.reserve is None or a.reserve <= 0) and len(self.armes) > 1:
+        if not a.melee and a.munitions <= 0 and (a.reserve is None or a.reserve <= 0) and len(self.armes) > 1:
             self.idx = 1 - self.idx
             return
-        if a.munitions <= 0:
+        if a.munitions <= 0 and not a.melee:
             a.recharger()
         c = self.cible
         if c is None or not self.vu or self.react > 0:
@@ -163,7 +174,7 @@ class PiloteIA(Pilote):
         oeil = self.oeil()
         cp = Vec3(c.x, c.y + c.h * .6, c.z)
         dist = distance(oeil, cp)
-        if dist > a.portee * .85 or not a.pret() or a.munitions <= 0:
+        if dist > a.portee * .85 or not a.pret() or (a.munitions <= 0 and not a.melee):
             return
         err = .03 + dist * .0012
         jit = Vec3(random.uniform(-1, 1), random.uniform(-.6, .6), random.uniform(-1, 1)) * dist * err
@@ -179,7 +190,7 @@ class PiloteIA(Pilote):
         self.tick(dt)
         self.react -= dt
         self.flash -= dt
-        self.torse.color = color.white if self.flash > 0 else self.col
+        self.torse.color = Color(2.6, 2.6, 2.6, 1) if self.flash > 0 else Color(1, 1, 1, 1)
         self.strafe_t -= dt
         if self.strafe_t <= 0:
             self.strafe_t, self.strafe = random.uniform(1.2, 2.5), random.choice((-1, 1))

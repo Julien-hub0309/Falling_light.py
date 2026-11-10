@@ -1,7 +1,8 @@
-import etat as E
-from bot.zombie_commun import ZombieBase, bruit, generer_groupes
+"""zombie.py - Point d'entrée : types de zombies selon le moment de la partie (jour / nuit)."""
+from partie import etat as E
+from bot.zombie_commun import ZombieBase, GestionZombies, generer_groupes, creer_groupe, bruit
 from bot.zombie_jour import ZombieJour, ZombieSpecialJour, lancer_partie_jour
-from bot.zombie_nuit import ZombieNuit, Rapace, lancer_partie_nuit
+from bot.zombie_nuit import ZombieNuit, Rapace, ZombieGeant, lancer_partie_nuit
 
 
 class _Type(type):
@@ -14,6 +15,10 @@ class Zombie(metaclass=_Type):
         return (ZombieNuit if E.partie.nuit else ZombieJour)(pos)
 
 
-# l'ancien code appelait z.passer_nuit() à la tombée de la nuit : plus de transition (parties séparées)
-if not hasattr(ZombieBase, "passer_nuit"):
-    ZombieBase.passer_nuit = lambda self: None
+# (classe, effectif, (taille mini de groupe, maxi)) selon le moment : sert au lancement ET au renfort
+def composition(nuit):
+    from bot import zombie_jour as J, zombie_nuit as N
+    if nuit:
+        return [(ZombieNuit, N.NB_NORMAUX, N.GROUPE_NORMAL), (Rapace, N.NB_RAPACES, N.GROUPE_RAPACE),
+                (ZombieGeant, N.NB_GEANTS, (1, 1))]
+    return [(ZombieJour, J.NB_NORMAUX, J.GROUPE_NORMAL), (ZombieSpecialJour, J.NB_SPECIAUX, J.GROUPE_SPECIAL)]

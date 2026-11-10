@@ -1,17 +1,7 @@
-"""map.py - Grande ville post-apocalyptique 360 x 360 m, jouable au sol ET sur les toits.
-
- * 6 x 6 pâtés de maisons séparés par des rues de 12 m (5 axes : -120 -60 0 60 120)
- * Types de pâtés : immeuble (escalier en zigzag + escalade de balcons), lotissement
-   (4 petits immeubles reliés par des passerelles), tiers (podium + tour), parc, ruines,
-   et 4 lieux spéciaux : TOUR centrale (59 m, héliport), PARKING à étages, CHANTIER avec grue,
-   PARC central.
- * Parkour : balcons à escalader, ruelles pour courir sur les murs, ponts entre toits,
-   grappin (X) utilisable partout.
- * Les escaliers sont praticables par les bots et les zombies (E.acces_toit)."""
 import math
 import random
 from ursina import *
-import etat as E
+from partie import etat as E
 import map.elements as EL
 from map.elements import FL, B, bloc, gris, Facade
 from map.loot import Loot

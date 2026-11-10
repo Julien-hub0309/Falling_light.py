@@ -1,11 +1,7 @@
-"""elements.py - Briques de construction de la ville : immeubles texturés, escaliers
-extérieurs (praticables par les bots), chaînes de balcons à escalader (parkour),
-mobilier de toit (couvertures), véhicules épaves, arbres, lampadaires, barrières…
-Toute la géométrie statique est fusionnée par texture (voir batch.py)."""
 import math
 import random
 from ursina import *
-import etat as E
+from partie import etat as E
 from map.batch import Monde
 
 FL = 3.3          # hauteur d'un étage

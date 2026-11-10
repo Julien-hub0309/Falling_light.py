@@ -1,6 +1,3 @@
-"""batch.py - Géométrie statique fusionnée : toutes les boîtes d'une même texture sont
-regroupées en UN SEUL maillage (très peu d'appels de rendu, même sur une grande ville).
-Les UV sont calculés en coordonnées monde : les fenêtres restent alignées sur les étages."""
 from ursina import Mesh, Entity, Vec3, Color
 import parametres.graphismes as G
 
@@ -11,10 +8,16 @@ def _cross(a, b):
     return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
 
 
+CHUNK = 48        # taille (m) d'un bloc : chaque bloc est cullé (non dessiné) s'il est hors du champ de vision
+
+
 class Batch:
+    """Accumule des faces ; construire() produit UN maillage par bloc spatial de CHUNK m
+    (au lieu d'un seul maillage couvrant toute la carte) : le moteur ne dessine que les blocs visibles."""
+
     def __init__(self, nom, tex=None, tuile=8, emissif=False):
         self.nom, self.tex, self.tuile, self.emissif = nom, tex, tuile, emissif
-        self.v, self.n, self.uv, self.c, self.t = [], [], [], [], []
+        self.blocs = {}
 
     def quad(self, p, n, col, uvs):
         a = (p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2])
@@ -22,12 +25,15 @@ class Batch:
         cr = _cross(a, b)
         if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2]) * SIGNE < 0:      # face vers l'extérieur
             p, uvs = p[::-1], uvs[::-1]
-        i = len(self.v)
-        self.v += p
-        self.n += [n] * 4
-        self.uv += uvs
-        self.c += [col] * 4
-        self.t.append((i, i + 1, i + 2, i + 3))
+        cx = (p[0][0] + p[2][0]) * .5
+        cz = (p[0][2] + p[2][2]) * .5
+        v, nn, uv, c, t = self.blocs.setdefault((int(cx // CHUNK), int(cz // CHUNK)), ([], [], [], [], []))
+        i = len(v)
+        v += p
+        nn += [n] * 4
+        uv += uvs
+        c += [col] * 4
+        t.append((i, i + 1, i + 2, i + 3))
 
     def plan(self, x0, x1, z0, z1, y, col, tuile=None, tourne=False, u0=0, v0=0):
         """Face horizontale tournée vers le haut (routes, sol, toits)."""
@@ -61,18 +67,20 @@ class Batch:
                       [(0, 0), (1, 0), (1, 1), (0, 1)])
 
     def construire(self):
-        if not self.v:
-            return None
-        m = Mesh(vertices=self.v, triangles=self.t, uvs=self.uv, normals=self.n, colors=self.c, static=True)
-        e = Entity(model=m, texture=G.texture(self.tex) if self.tex else 'white_cube')
-        if self.emissif:
-            G.appliquer_emissif(e)
-        elif G._shader is not None:
-            e.shader = G._shader
-        else:
-            from ursina.shaders.unlit_with_fog_shader import unlit_with_fog_shader
-            e.shader = unlit_with_fog_shader
-        return e
+        res = []
+        for (v, n, uv, c, t) in self.blocs.values():
+            m = Mesh(vertices=v, triangles=t, uvs=uv, normals=n, colors=c, static=True)
+            e = Entity(model=m, texture=G.texture(self.tex) if self.tex else 'white_cube')
+            if self.emissif:
+                G.appliquer_emissif(e)
+            elif G._shader is not None:
+                e.shader = G._shader
+            else:
+                from ursina.shaders.unlit_with_fog_shader import unlit_with_fog_shader
+                e.shader = unlit_with_fog_shader
+            e.ignore = True                      # décor statique : pas d'update()
+            res.append(e)
+        return res or None
 
 
 class Monde:

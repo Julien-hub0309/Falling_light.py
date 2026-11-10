@@ -1,9 +1,10 @@
 from ursina import *
 from bot.zombie_commun import ZombieBase, generer_groupes
 
+# ---- PARTIE DE JOUR --------------------------------------------------------
 NB_NORMAUX = 40                 # zombies normaux par partie de jour
 GROUPE_NORMAL = (3, 4)          # taille des groupes
-NB_SPECIAUX = 8                 # (hypothèse - non précisé) spéciaux par partie de jour
+NB_SPECIAUX = 8                 # (non précisé) spéciaux par partie de jour : minorité, les armes à feu les attirent
 GROUPE_SPECIAL = (2, 3)
 
 

@@ -3,10 +3,11 @@ armes, grenades, appel du Titan, ramassage du loot."""
 import math
 import random
 from ursina import *
-import etat as E
+from partie import etat as E
 from classe import choix_classe as CC
 from bot.allie import Titan
 from armes.grenade import Grenade
+from armes.melee import degats_contre
 from armes import fusil, smg, sniper, shotgun
 
 FABRIQUES_ARMES = {'AR-15': fusil.creer, 'Kriss Vector': smg.creer,
@@ -63,6 +64,7 @@ class Pilote(Entity):
     def damage(self, n, source=None, tete=False):
         if not self.vivant or self.elimine or self.invuln > 0 or not E.partie.actif:
             return
+        n = degats_contre(self, source, n)       # couteau : 3 coups pour tuer un pilote
         self.since_hit = 0
         if self.armure > 0:
             a = min(self.armure, n * .6)
@@ -131,6 +133,19 @@ class Pilote(Entity):
                         E.msg(f'TITANFALL ! (-{E.COUT_TITAN} pts)')
                     return True
         return False
+
+    def arme_pour_titan(self):
+        """Arme à feu dont le Titan reprend la version surpuissante : l'arme de classe du pilote si elle est
+        débloquée, sinon l'arme principale de sa classe (le pilote ne démarre qu'avec un couteau)."""
+        if len(self.armes) > 1 and not getattr(self.armes[1], 'melee', False):
+            return self.armes[1]
+        prim = (self.classe or {}).get('primaire')
+        return prim() if prim else fusil.creer()
+
+    def donner_ordre(self, ordre):
+        """Ordre simple au Titan (suivre / garder / aller / attaquer), quand on n'est pas à bord."""
+        from bot import titan as ordres
+        return ordres.donner_ordre(self, ordre)
 
     def ramasser(self, loot):
         t, texte = loot.type, None

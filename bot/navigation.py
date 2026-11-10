@@ -3,7 +3,7 @@ escaliers menant aux toits. route() renvoie une liste de points à suivre."""
 import math
 from collections import deque
 from ursina import Vec3
-import etat as E
+from partie import etat as E
 
 AXES = (-120, -60, 0, 60, 120)          # axes des routes (même valeurs que map.py)
 

@@ -3,12 +3,15 @@ grappin) + parkour Dying Light (grimper) + Titan pilotable."""
 import math
 import random
 from ursina import *
-import etat as E
-import effets as FX
+from partie import etat as E
+from partie import effets as FX
 from armes import modeles as VM
 from bot.pilote import Pilote
 from armes import titan as arme_titan
 from parametres import clavier as K, souris as S
+from parametres import clavier
+from armes import melee
+import craft
 
 
 class Player(Pilote):
@@ -24,7 +27,8 @@ class Player(Pilote):
         self.vel, self.vy = Vec3(0, 0, 0), 0
         self.grounded, self.jumps, self.wall_t = True, 1, 0
         self.wall_n, self.wallrunning = None, False
-        self.slide_t, self.slide_dir = 0, Vec3(0, 0, 1)
+        self.slide_t, self.slide_dir, self.slide_v = 0, Vec3(0, 0, 1), 0
+        self.melee_t, self.melee_vms = 0, {}      # animation de frappe (couteau / épée)
         self.grimpe = None
         self.grappin, self.grappin_t, self.grappin_cd, self.corde = None, 0, 0, None
         self.zoom = self.lunette = False
@@ -92,7 +96,7 @@ class Player(Pilote):
     def embarquer(self):
         t = self.titan
         self.mode, self.titan_hp, self.vy = 'titan', t.hp, 0
-        self.arme_titan = arme_titan.pour(self.armes[0])
+        self.arme_titan = arme_titan.pour(self.arme_pour_titan())
         self.position = Vec3(t.x, 0, t.z)
         t.embarquer()
         self.zoom = False
@@ -122,7 +126,9 @@ class Player(Pilote):
             return
         titan = self.mode == 'titan'
         if K.est(key, 'saut'):
-            if self.slide_t > 0:
+            if self.slide_t > 0:                         # saut depuis la glissade : on garde (et on gagne un peu de) vitesse
+                v = min(24, self.slide_v * 1.06)
+                self.vel = Vec3(self.slide_dir.x * v, 0, self.slide_dir.z * v)
                 self.slide_t = 0
             if self.grappin is not None:
                 self.fin_grappin()
@@ -163,9 +169,51 @@ class Player(Pilote):
         elif K.est(key, 'glisse') and self.grounded and not titan and self.slide_t <= 0:
             v = Vec3(self.vel.x, 0, self.vel.z)
             if v.length() > 6:
-                self.slide_t, self.slide_dir = .8, E.norm(v)
+                # ELAN CONSERVE : la glissade démarre à la vitesse de la course (+12 %), jamais en dessous de 13 m/s
+                self.slide_t, self.slide_dir = 2.2, E.norm(v)
+                self.slide_v = min(24, max(v.length() * 1.12, 13))
         elif K.est(key, 'tir') and not self.arme_active().auto:
             self.tirer()
+        elif K.est(key, 'melee'):
+            melee.frapper_joueur(self)               # couteau (épée si on pilote le Titan)
+        elif not titan and K.est(key, 'ordre_suivre'):
+            self.donner_ordre('suivre')
+        elif not titan and K.est(key, 'ordre_garder'):
+            self.donner_ordre('garder')
+        elif not titan and K.est(key, 'ordre_aller'):
+            self.donner_ordre('aller')
+        elif not titan and K.est(key, 'ordre_attaquer'):
+            self.donner_ordre('attaquer')
+        else:
+            craft.touche(key, self)                  # kits de soin / d'armure
+
+    # ---- animation de frappe ------------------------------------------------------------------
+    def swing(self, arme):
+        """Brandit le couteau / l'épée du Titan quelques instants (l'arme tenue est masquée)."""
+        cle = (arme.modele, self.mode == 'titan')
+        if cle not in self.melee_vms:
+            self.melee_vms[cle] = VM.construire(arme.modele, camera, cle[1])
+        for k, vm in self.melee_vms.items():
+            vm.enabled = (k == cle)
+        self.melee_t = .3
+        self.gun.enabled = False
+
+    def maj_swing(self, dt):
+        if self.melee_t <= 0:
+            return
+        self.melee_t -= dt
+        titan = self.mode == 'titan'
+        for (nom, t), vm in self.melee_vms.items():
+            if not vm.enabled:
+                continue
+            p = 1 - max(0, self.melee_t) / .3
+            k = 2.6 if t else 1
+            vm.position = (lerp(.45, -.25, p) * k, (-.3 + .12 * math.sin(p * 3.14)) * k, .7 * k)
+            vm.rotation = (lerp(-25, 25, p), lerp(-35, 25, p), lerp(50, -60, p))
+        if self.melee_t <= 0:
+            for vm in self.melee_vms.values():
+                vm.enabled = False
+            self.gun.enabled = not self.lunette and self.melee_t <= 0
 
     # ---- parkour : grimper (style Dying Light) -------------------------------
     def tente_grimper(self):
@@ -228,6 +276,9 @@ class Player(Pilote):
     # ---- tir --------------------------------------------------------------------------------
     def tirer(self):
         a = self.arme_active()
+        if a.melee:                                  # clic gauche avec le couteau en main = coup de couteau
+            melee.frapper_joueur(self)
+            return
         o, d = camera.world_position, camera.forward
         debut = o + camera.right * .3 - camera.up * .2 + camera.forward * .5
         if a.tirer(self, o, d, debut=debut, zoomed=self.zoom):
@@ -243,9 +294,19 @@ class Player(Pilote):
         a = self.arme_active()
         ratio = clamp(a.zoom / S.FOV, .25, 1) if (self.zoom and a is not None and a.zoom) else 1
         sens = S.SENSIBILITE * ratio
-        self.rotation_y += mouse.velocity[0] * sens
+        vx, vy = self.mouvement_souris()
+        self.rotation_y += vx * sens
         inv = -1 if S.INVERSER_Y else 1
-        self.pivot.rotation_x = clamp(self.pivot.rotation_x - mouse.velocity[1] * sens * inv, -89, 89)
+        self.pivot.rotation_x = clamp(self.pivot.rotation_x - vy * sens * inv, -89, 89)
+
+    def mouvement_souris(self):
+        """Déplacement de la souris. Pendant le jeu, Partie désactive mouse.update (qui fait un picking
+        d'entités à chaque image, inutile curseur verrouillé) : on lit alors la position et on recentre."""
+        if mouse.enabled or not mouse.locked:
+            return mouse.velocity[0], mouse.velocity[1]
+        p = mouse.position
+        mouse.position = (0, 0)
+        return p[0], p[1]
 
     def vol_spectateur(self, dt):
         """Éliminé : caméra libre pour regarder la fin du match."""
@@ -269,6 +330,7 @@ class Player(Pilote):
         if not self.vivant or P.fini:
             return
         self.tick(dt)
+        self.maj_swing(dt)
         self.grappin_cd -= dt
         titan = self.mode == 'titan'
         self.r, self.h = (1.2, 5.6) if titan else (.4, 1.8)
@@ -332,6 +394,33 @@ class Player(Pilote):
             self.grounded, self.jumps, self.wall_t = True, 1, 0
             self.vel = Vec3(wish.x * 3, 0, wish.z * 3)
 
+    def appliquer_vitesse(self, dt, wish, speed, sprint):
+        """CONSERVATION DE LA VITESSE : au-dessus de la vitesse de marche/course la vitesse ne retombe
+        que progressivement (course -> glissade -> saut gardent leur élan), la direction se règle séparément."""
+        if self.slide_t > 0:
+            return
+        sol = self.grounded
+        v = Vec3(self.vel.x, 0, self.vel.z)
+        mag = v.length()
+        if wish.length() > 0:
+            dirv = v * (1 / mag) if mag > .1 else wish
+            if mag > .1 and dirv.dot(wish) < -.3:          # demi-tour : on freine franchement
+                k = min(1, (14 if sol else 3.5) * dt)
+                self.vel.x = lerp(self.vel.x, wish.x * speed, k)
+                self.vel.z = lerp(self.vel.z, wish.z * speed, k)
+                return
+            d = E.norm(lerp(dirv, wish, min(1, (14 if sol else 2.6) * dt)))
+            if mag > speed:                                # élan : décroissance lente vers la vitesse de course
+                taux = ((1.0 if sprint else 2.0) if sol else (1.0 if self.wallrunning else .3))
+                mag = speed + (mag - speed) * math.exp(-taux * dt)
+            else:
+                mag = lerp(mag, speed, min(1, (14 if sol else (8 if self.wallrunning else 3.5)) * dt))
+            self.vel.x, self.vel.z = d.x * mag, d.z * mag
+        else:                                              # aucune touche : frottement (fort au sol, faible en l'air)
+            k = min(1, (10 if sol else 1.0) * dt)
+            self.vel.x = lerp(self.vel.x, 0, k)
+            self.vel.z = lerp(self.vel.z, 0, k)
+
     def mouvement(self, dt, f, wish, titan):
         sprint = K.tenu('sprint')
         speed = (10 if sprint else 6) if titan else (12 if sprint else 8) * self.vitesse_mult
@@ -339,18 +428,19 @@ class Player(Pilote):
             speed *= 1.25
         if self.zoom:
             speed *= .7
-        k = min(1, (14 if self.grounded else (8 if self.wallrunning else 3.5)) * dt)
-        self.vel.x = lerp(self.vel.x, wish.x * speed, k)
-        self.vel.z = lerp(self.vel.z, wish.z * speed, k)
+        self.appliquer_vitesse(dt, wish, speed, sprint)
 
         if self.grappin is not None:
             self.tirer_grappin(dt)
         if self.slide_t > 0:
+            # ---- GLISSADE : on conserve l'élan de la course, il ne diminue que par frottement (4,5 m/s²)
             self.slide_t -= dt
-            v = 6 + 10 * max(0, self.slide_t) / .8
-            self.vel.x, self.vel.z = self.slide_dir.x * v, self.slide_dir.z * v
-            if not self.grounded:
-                self.slide_t = 0
+            self.slide_v = max(0.0, self.slide_v - 4.5 * dt)
+            if wish.length() > 0:                        # léger contrôle de trajectoire
+                self.slide_dir = E.norm(lerp(self.slide_dir, wish, min(1, 1.6 * dt)))
+            self.vel.x, self.vel.z = self.slide_dir.x * self.slide_v, self.slide_dir.z * self.slide_v
+            if not self.grounded or self.slide_v < 6.5:
+                self.slide_t = 0                         # fin de glissade : la vitesse restante est conservée
 
         # grimper automatiquement en gardant Espace contre un mur
         if self.wall_n is not None and not self.grounded and K.tenu('saut') and f > 0 and not titan:
