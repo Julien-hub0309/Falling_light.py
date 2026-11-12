@@ -1,0 +1,47 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
+[application]
+
+config/name="Falling Light"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://asset/icon.jpeg"
+
+[autoload]
+
+Etat="*res://scripts/etat.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[dotnet]
+
+project/assembly_name="Falling Light"
+
+[layer_names]
+
+3d_physics/layer_1="monde"
+3d_physics/layer_2="pilotes"
+3d_physics/layer_3="zombies"
+
+[navigation]
+
+3d/merge_rasterizer_cell_scale=0.001
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=1
