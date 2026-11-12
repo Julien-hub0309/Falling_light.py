@@ -1,4 +1,0 @@
-ursina      # moteur 3D du jeu (installe aussi panda3d)
-numpy
-pillow      # textures, génération des icônes du raccourci
-pygame      # client LAN (server/server_client.py)
